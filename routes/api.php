@@ -58,7 +58,7 @@ Route::middleware('auth:sanctum')->group(function () {
     // Time slot routes
     Route::get('/time-slots', [TimeSlotController::class, 'getAvailableTimeSlots']);
     Route::get('/available-dates', [TimeSlotController::class, 'getAvailableDates']);
-    
+
     // Parking slots routes
     Route::get('/parking-locations/{parkingLocation}/slots', [ParkingSlotController::class, 'index']);
     Route::get('/parking-locations/{parkingLocation}/available-slots', [ParkingSlotController::class, 'getAvailableSlots']);
@@ -74,12 +74,12 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/bookings/{booking}/check-in', [OwnerController::class, 'checkInBooking']);
         Route::post('/bookings/{booking}/check-out', [OwnerController::class, 'checkOutBooking']);
         Route::get('/revenue-reports', [OwnerController::class, 'revenueReports']);
-        
+
         // Parking slots routes for owners
         Route::post('/parking-locations/{parkingLocation}/slots', [ParkingSlotController::class, 'store']);
         Route::put('/parking-locations/{parkingLocation}/slots/{parkingSlot}', [ParkingSlotController::class, 'update']);
         Route::delete('/parking-locations/{parkingLocation}/slots/{parkingSlot}', [ParkingSlotController::class, 'destroy']);
-    }); 
+    });
 
     // Parking location routes (for owners)
     Route::apiResource('parking-locations', ParkingLocationController::class)->except(['index', 'show']);

@@ -49,10 +49,22 @@ class ParkingSlot extends Model
     /**
      * Check if the slot is currently occupied.
      */
-    public function isOccupied()
+    public function checkOccupied()
     {
         return $this->bookings()
             ->where('status', 'checked_in')
+            ->where(function ($query) {
+                $query->where('check_in_time', '<=', now())
+                    ->where('check_out_time', '>=', now());
+            })
             ->exists();
+    }
+
+    /**
+     * Get the occupied status of the slot.
+     */
+    public function getIsOccupiedAttribute()
+    {
+        return $this->checkOccupied();
     }
 } 

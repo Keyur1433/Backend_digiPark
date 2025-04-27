@@ -32,7 +32,7 @@ class BookingResource extends JsonResource
             'user' => $this->when($this->relationLoaded('user'), new UserResource($this->user)),
             'vehicle' => $this->when($this->relationLoaded('vehicle'), new VehicleResource($this->vehicle)),
             'parking_location' => $this->when($this->relationLoaded('parkingLocation'), new ParkingLocationResource($this->parkingLocation)),
-            'parking_slot' => $this->when($this->relationLoaded('parkingSlot'), $this->parkingSlot),
+            'parking_slot' => $this->when($this->relationLoaded('parkingSlot'), new ParkingSlotResource($this->parkingSlot)),
         ];
     }
 }

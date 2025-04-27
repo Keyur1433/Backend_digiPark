@@ -327,7 +327,7 @@ class OwnerController extends Controller
 
             return response()->json([
                 'message' => 'Booking checked out successfully.',
-                'booking' => new BookingResource($booking->load(['user', 'vehicle', 'parkingLocation'])),
+                'booking' => new BookingResource($booking->load(['user', 'vehicle', 'parkingLocation', 'parkingSlot'])),
             ]);
         } catch (\Exception $e) {
             DB::rollBack();

@@ -23,6 +23,7 @@ class StoreCheckInBookingRequest extends FormRequest
     {
         return [
             'parking_location_id' => ['required', 'exists:parking_locations,id'],
+            'parking_slot_id' => ['required', 'exists:parking_slots,id'],
             'vehicle_id' => ['required', 'exists:vehicles,id'],
             'duration_hours' => ['required', 'integer', 'min:1', 'max:9'],
         ];

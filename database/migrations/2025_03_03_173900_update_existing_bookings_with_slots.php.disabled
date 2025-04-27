@@ -74,6 +74,14 @@ return new class extends Migration
                 $booking->save();
             }
         }
+
+        // Add foreign key constraint separately after all tables exist
+        Schema::table('parking_slots', function (Blueprint $table) {
+            $table->foreign('parking_location_id')
+                  ->references('id')
+                  ->on('parking_locations')
+                  ->onDelete('cascade');
+        });
     }
 
     /**
@@ -84,5 +92,9 @@ return new class extends Migration
         // Set all parking_slot_id to null in bookings
         DB::table('parking_bookings')
             ->update(['parking_slot_id' => null]);
+
+        Schema::table('parking_slots', function (Blueprint $table) {
+            $table->dropForeign(['parking_location_id']);
+        });
     }
 }; 

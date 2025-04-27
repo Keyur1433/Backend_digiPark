@@ -23,6 +23,7 @@ class StoreAdvanceBookingRequest extends FormRequest
     {
         return [
             'parking_location_id' => ['required', 'exists:parking_locations,id'],
+            'parking_slot_id' => ['required', 'exists:parking_slots,id'],
             'vehicle_id' => ['required', 'exists:vehicles,id'],
             'date' => ['required', 'date', 'after_or_equal:today'],
             'start_time' => ['required', 'date_format:H:i'],

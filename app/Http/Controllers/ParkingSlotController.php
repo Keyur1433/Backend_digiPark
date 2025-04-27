@@ -68,7 +68,7 @@ class ParkingSlotController extends Controller
             $slot = $parkingLocation->slots()->create([
                 'slot_number' => $request->slot_number,
                 'vehicle_type' => $request->vehicle_type,
-                'is_active' => true,
+                'is_active' => DB::raw('TRUE'),
             ]);
 
             // Update the corresponding slot availability
@@ -261,22 +261,140 @@ class ParkingSlotController extends Controller
     {
         // Validate request
         $request->validate([
-            'vehicle_type' => 'required|in:2-wheeler,4-wheeler',
+            'vehicle_type' => 'nullable|in:2-wheeler,4-wheeler',
+            'date' => 'required|date|after_or_equal:today',
+            'start_time' => 'nullable|date_format:H:i',
+            'end_time' => 'nullable|date_format:H:i|after:start_time',
         ]);
 
-        // Get all active slots of the specified vehicle type
-        $slots = $parkingLocation->slots()
-            ->where('vehicle_type', $request->vehicle_type)
-            ->where('is_active', true)
-            ->get();
+        // Check if parking location is active
+        if (!$parkingLocation->is_active) {
+            return response()->json([
+                'message' => 'This parking location is not active.',
+            ], 422);
+        }
 
-        // Filter out slots that are currently occupied
-        $availableSlots = $slots->filter(function ($slot) {
-            return !$slot->isOccupied();
-        })->values();
+        $date = $request->date;
+        $vehicleType = $request->vehicle_type;
+        $startTime = $request->start_time;
+        $endTime = $request->end_time;
+
+        // Get all slots with optional vehicle type filter
+        $query = $parkingLocation->slots()
+            ->where('is_active', DB::raw('TRUE'))
+            ->with(['bookings' => function($query) use ($date, $startTime, $endTime) {
+                $query->whereDate('check_in_time', $date)
+                    ->where('status', '!=', 'cancelled');
+
+                // If time range is provided, filter bookings within that range
+                if ($startTime && $endTime) {
+                    $query->where(function($q) use ($startTime, $endTime) {
+                        $q->where(function($inner) use ($startTime, $endTime) {
+                            // Booking starts during the requested time period
+                            $inner->whereTime('check_in_time', '>=', $startTime)
+                                ->whereTime('check_in_time', '<', $endTime);
+                        })->orWhere(function($inner) use ($startTime, $endTime) {
+                            // Booking ends during the requested time period
+                            $inner->whereTime('check_out_time', '>', $startTime)
+                                ->whereTime('check_out_time', '<=', $endTime);
+                        })->orWhere(function($inner) use ($startTime, $endTime) {
+                            // Booking completely covers the requested time period
+                            $inner->whereTime('check_in_time', '<=', $startTime)
+                                ->whereTime('check_out_time', '>=', $endTime);
+                        });
+                    });
+                }
+            }]);
+
+        if ($vehicleType) {
+            $query->where('vehicle_type', $vehicleType);
+        }
+
+        $slots = $query->get();
+
+        // Transform slots with booking information
+        $transformedSlots = $slots->map(function ($slot) use ($startTime, $endTime) {
+            $isOccupied = $slot->checkOccupied();
+            $hasUpcomingBooking = $slot->bookings->isNotEmpty();
+            
+            // If time range is provided, check if slot is available for that specific period
+            $isAvailableForTimeRange = true;
+            if ($startTime && $endTime) {
+                $isAvailableForTimeRange = !$slot->bookings->contains(function ($booking) use ($startTime, $endTime) {
+                    return $booking->status !== 'cancelled' &&
+                        (
+                            // Booking starts during the requested time period
+                            (strtotime($booking->check_in_time->format('H:i')) >= strtotime($startTime) && 
+                             strtotime($booking->check_in_time->format('H:i')) < strtotime($endTime)) ||
+                            // Booking ends during the requested time period
+                            (strtotime($booking->check_out_time->format('H:i')) > strtotime($startTime) && 
+                             strtotime($booking->check_out_time->format('H:i')) <= strtotime($endTime)) ||
+                            // Booking completely covers the requested time period
+                            (strtotime($booking->check_in_time->format('H:i')) <= strtotime($startTime) && 
+                             strtotime($booking->check_out_time->format('H:i')) >= strtotime($endTime))
+                        );
+                });
+            }
+            
+            return [
+                'id' => $slot->id,
+                'slot_number' => $slot->slot_number,
+                'vehicle_type' => $slot->vehicle_type,
+                'is_active' => $slot->is_active,
+                'is_occupied' => $isOccupied,
+                'has_upcoming_booking' => $hasUpcomingBooking,
+                'is_available_for_time_range' => $isAvailableForTimeRange,
+                'bookings' => $slot->bookings->map(function ($booking) {
+                    return [
+                        'id' => $booking->id,
+                        'check_in_time' => $booking->check_in_time,
+                        'check_out_time' => $booking->check_out_time,
+                        'status' => $booking->status,
+                    ];
+                }),
+                'status' => $isOccupied ? 'occupied' : 
+                           (!$isAvailableForTimeRange ? 'booked' : 
+                           ($hasUpcomingBooking ? 'partially_available' : 'available')),
+            ];
+        });
+
+        // Get slot availability information for both vehicle types if no specific type is requested
+        $slotAvailabilities = [];
+        if (!$vehicleType) {
+            $slotAvailabilities = $parkingLocation->slotAvailabilities()
+                ->get()
+                ->map(function ($availability) {
+                    return [
+                        'vehicle_type' => $availability->vehicle_type,
+                        'total_slots' => $availability->total_slots,
+                        'available_slots' => $availability->available_slots,
+                    ];
+                });
+        } else {
+            $slotAvailability = $parkingLocation->slotAvailabilities()
+                ->where('vehicle_type', $vehicleType)
+                ->first();
+            
+            if ($slotAvailability) {
+                $slotAvailabilities = [[
+                    'vehicle_type' => $slotAvailability->vehicle_type,
+                    'total_slots' => $slotAvailability->total_slots,
+                    'available_slots' => $slotAvailability->available_slots,
+                ]];
+            }
+        }
 
         return response()->json([
-            'available_slots' => $availableSlots,
+            'slots' => $transformedSlots,
+            'total_slots' => $slots->count(),
+            'available_slots' => $slots->where('isOccupied', false)->count(),
+            'slot_availabilities' => $slotAvailabilities,
+            'date' => $date,
+            'vehicle_type' => $vehicleType,
+            'time_range' => $startTime && $endTime ? [
+                'start_time' => $startTime,
+                'end_time' => $endTime
+            ] : null,
         ]);
     }
-} 
+}

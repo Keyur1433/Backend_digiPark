@@ -84,7 +84,7 @@ class BookingController extends Controller
         }
         
         // Verify the slot is not already occupied
-        if ($parkingSlot->isOccupied()) {
+        if ($parkingSlot->checkOccupied()) {
             return response()->json([
                 'message' => 'The selected parking slot is already occupied.',
             ], 422);

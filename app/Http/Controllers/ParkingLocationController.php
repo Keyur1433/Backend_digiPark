@@ -89,6 +89,23 @@ class ParkingLocationController extends Controller
                 'total_slots' => $request->four_wheeler_capacity,
             ]);
 
+            // Create individual parking slots
+            for ($i = 1; $i <= $request->two_wheeler_capacity; $i++) {
+                $parkingLocation->slots()->create([
+                    'slot_number' => '2W-' . sprintf('%03d', $i),
+                    'vehicle_type' => '2-wheeler',
+                    'is_active' => DB::raw('TRUE'),
+                ]);
+            }
+
+            for ($i = 1; $i <= $request->four_wheeler_capacity; $i++) {
+                $parkingLocation->slots()->create([
+                    'slot_number' => '4W-' . sprintf('%03d', $i),
+                    'vehicle_type' => '4-wheeler',
+                    'is_active' => DB::raw('TRUE'),
+                ]);
+            }
+
             DB::commit();
 
             return response()->json([

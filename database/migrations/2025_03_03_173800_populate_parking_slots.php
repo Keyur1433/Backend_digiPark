@@ -22,7 +22,7 @@ return new class extends Migration
                     'parking_location_id' => $parkingLocation->id,
                     'slot_number' => '2W-' . sprintf('%03d', $i),
                     'vehicle_type' => '2-wheeler',
-                    'is_active' => true,
+                    'is_active' => DB::raw('true'),
                 ]);
             }
 
@@ -32,7 +32,7 @@ return new class extends Migration
                     'parking_location_id' => $parkingLocation->id,
                     'slot_number' => '4W-' . sprintf('%03d', $i),
                     'vehicle_type' => '4-wheeler',
-                    'is_active' => true,
+                    'is_active' => DB::raw('true'),
                 ]);
             }
         }
