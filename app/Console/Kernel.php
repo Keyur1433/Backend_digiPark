@@ -12,7 +12,8 @@ class Kernel extends ConsoleKernel
      */
     protected function schedule(Schedule $schedule): void
     {
-        // $schedule->command('inspire')->hourly();
+        // Run the auto-complete bookings command every minute
+        $schedule->command('bookings:auto-complete')->everyMinute();
     }
 
     /**
