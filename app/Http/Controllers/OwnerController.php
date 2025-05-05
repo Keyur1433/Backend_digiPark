@@ -34,45 +34,55 @@ class OwnerController extends Controller
      */
     public function dashboard(): JsonResponse
     {
+        try {
         $ownerId = Auth::id();
 
-        // Get all parking locations owned by this owner
-        $parkingLocations = ParkingLocation::where('owner_id', $ownerId)->get();
+            // Get all parking locations owned by this owner with eager loading
+            $parkingLocations = ParkingLocation::where('owner_id', $ownerId)
+                ->with('slotAvailabilities')
+                ->limit(100) // Limit to 100 locations max
+                ->get();
+                
         $parkingLocationIds = $parkingLocations->pluck('id')->toArray();
 
         // Count statistics
-        $totalParkingLocations = $parkingLocations->count();
+            $totalParkingLocations = count($parkingLocationIds);
         $activeParkingLocations = $parkingLocations->where('is_active', true)->count();
 
         $totalTwoWheelerCapacity = $parkingLocations->sum('two_wheeler_capacity');
         $totalFourWheelerCapacity = $parkingLocations->sum('four_wheeler_capacity');
 
-        // Get bookings for these parking locations
-        $totalBookings = ParkingBooking::whereIn('parking_location_id', $parkingLocationIds)->count();
-        $activeBookings = ParkingBooking::whereIn('parking_location_id', $parkingLocationIds)
-            ->whereIn('status', ['upcoming', 'checked_in'])
-            ->count();
-        $completedBookings = ParkingBooking::whereIn('parking_location_id', $parkingLocationIds)
-            ->where('status', 'completed')
-            ->count();
+            // Use more efficient queries for aggregate data
+            $bookingCounts = DB::table('parking_bookings')
+                ->selectRaw('COUNT(*) as total_bookings')
+                ->selectRaw("SUM(CASE WHEN status IN ('upcoming', 'checked_in') THEN 1 ELSE 0 END) as active_bookings")
+                ->selectRaw("SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as completed_bookings")
+                ->whereIn('parking_location_id', $parkingLocationIds)
+                ->first();
 
-        // Revenue calculation
-        $totalRevenue = ParkingBooking::whereIn('parking_location_id', $parkingLocationIds)
+            // Revenue calculation with single query - using PostgreSQL compatible syntax
+            $revenueData = DB::table('parking_bookings')
+                ->selectRaw('SUM(amount) as total_revenue')
+                ->selectRaw("SUM(CASE WHEN DATE(created_at) = CURRENT_DATE THEN amount ELSE 0 END) as today_revenue")
+                ->whereIn('parking_location_id', $parkingLocationIds)
             ->whereIn('status', ['checked_in', 'completed'])
-            ->sum('amount');
+                ->first();
 
-        // Today's revenue
-        $todayRevenue = ParkingBooking::whereIn('parking_location_id', $parkingLocationIds)
-            ->whereIn('status', ['checked_in', 'completed'])
-            ->whereDate('created_at', Carbon::today())
-            ->sum('amount');
-
-        // Recent bookings
+            // Recent bookings - limit to small number, using full eager loading to avoid column specification
         $recentBookings = ParkingBooking::whereIn('parking_location_id', $parkingLocationIds)
             ->with(['user', 'vehicle', 'parkingLocation'])
             ->orderBy('created_at', 'desc')
-            ->limit(10)
+                ->limit(5)
             ->get();
+
+            // Ensure proper output when no data is found
+            if (empty($revenueData)) {
+                $revenueData = (object) ['total_revenue' => 0, 'today_revenue' => 0];
+            }
+            
+            if (empty($bookingCounts)) {
+                $bookingCounts = (object) ['total_bookings' => 0, 'active_bookings' => 0, 'completed_bookings' => 0];
+            }
 
         return response()->json([
             'statistics' => [
@@ -80,14 +90,23 @@ class OwnerController extends Controller
                 'active_parking_locations' => $activeParkingLocations,
                 'total_two_wheeler_capacity' => $totalTwoWheelerCapacity,
                 'total_four_wheeler_capacity' => $totalFourWheelerCapacity,
-                'total_bookings' => $totalBookings,
-                'active_bookings' => $activeBookings,
-                'completed_bookings' => $completedBookings,
-                'total_revenue' => $totalRevenue,
-                'today_revenue' => $todayRevenue,
+                    'total_bookings' => $bookingCounts->total_bookings ?? 0,
+                    'active_bookings' => $bookingCounts->active_bookings ?? 0,
+                    'completed_bookings' => $bookingCounts->completed_bookings ?? 0,
+                    'total_revenue' => $revenueData->total_revenue ?? 0,
+                    'today_revenue' => $revenueData->today_revenue ?? 0,
             ],
             'recent_bookings' => BookingResource::collection($recentBookings),
         ]);
+        } catch (\Exception $e) {
+            // Log the error
+            \Log::error('Dashboard error: ' . $e->getMessage());
+            
+            return response()->json([
+                'message' => 'An error occurred while fetching dashboard data',
+                'error' => $e->getMessage(),
+            ], 500);
+        }
     }
 
     /**
@@ -95,6 +114,7 @@ class OwnerController extends Controller
      */
     public function bookings(Request $request): JsonResponse
     {
+        try {
         $ownerId = Auth::id();
         $parkingLocationIds = ParkingLocation::where('owner_id', $ownerId)->pluck('id')->toArray();
 
@@ -136,6 +156,14 @@ class OwnerController extends Controller
                 'last_page' => $bookings->lastPage(),
             ],
         ]);
+        } catch (\Exception $e) {
+            \Log::error('Bookings error: ' . $e->getMessage());
+            
+            return response()->json([
+                'message' => 'An error occurred while fetching bookings',
+                'error' => $e->getMessage(),
+            ], 500);
+        }
     }
 
     /**
@@ -143,6 +171,7 @@ class OwnerController extends Controller
      */
     public function parkingLocations(Request $request): JsonResponse
     {
+        try {
         $query = ParkingLocation::where('owner_id', Auth::id())
             ->with('slotAvailabilities');
 
@@ -166,6 +195,14 @@ class OwnerController extends Controller
         return response()->json([
             'parking_locations' => ParkingLocationResource::collection($parkingLocations),
         ]);
+        } catch (\Exception $e) {
+            \Log::error('Parking locations error: ' . $e->getMessage());
+            
+            return response()->json([
+                'message' => 'An error occurred while fetching parking locations',
+                'error' => $e->getMessage(),
+            ], 500);
+        }
     }
 
     /**
